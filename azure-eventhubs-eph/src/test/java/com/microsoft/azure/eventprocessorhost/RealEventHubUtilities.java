@@ -6,31 +6,9 @@
 package com.microsoft.azure.eventprocessorhost;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URL;
-import java.net.URLConnection;
-import java.nio.charset.StandardCharsets;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.concurrent.ExecutionException;
-
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.xpath.XPath;
-import javax.xml.xpath.XPathConstants;
-import javax.xml.xpath.XPathExpressionException;
-import javax.xml.xpath.XPathFactory;
-
-import org.w3c.dom.Document;
-import org.w3c.dom.NodeList;
-import org.xml.sax.SAXException;
 
 import com.microsoft.azure.eventhubs.*;
 import com.microsoft.azure.eventhubs.EventHubException;
@@ -55,7 +33,7 @@ class RealEventHubUtilities
 		ArrayList<String> partitionIds = setupWithoutSenders(fakePartitions);
 		
 		// EventHubClient is source of all senders
-		this.client = EventHubClient.createFromConnectionStringSync(this.hubConnectionString.toString());
+		this.client = EventHubClient.createFromConnectionStringSync(this.hubConnectionString.toString(), TestUtilities.EXECUTOR_SERVICE);
 		
 		return partitionIds;
 	}
@@ -119,7 +97,7 @@ class RealEventHubUtilities
 		if (this.hubName == null)
 		{
 			this.hubConnectionString = new ConnectionStringBuilder(System.getenv("EVENT_HUB_CONNECTION_STRING"));
-			this.hubName = this.hubConnectionString.getEntityPath();
+			this.hubName = this.hubConnectionString.getEventHubName();
 		}
 	}
 	
@@ -165,7 +143,7 @@ class RealEventHubUtilities
 	    	this.cachedPartitionIds = new ArrayList<String>();
 	    	ehCacheCheck();
 	    	
-	    	EventHubClient idClient = EventHubClient.createFromConnectionStringSync(this.hubConnectionString.toString());
+	    	EventHubClient idClient = EventHubClient.createFromConnectionStringSync(this.hubConnectionString.toString(), TestUtilities.EXECUTOR_SERVICE);
 	    	try
 	    	{
 	    		EventHubRuntimeInformation info = idClient.getRuntimeInformation().get();

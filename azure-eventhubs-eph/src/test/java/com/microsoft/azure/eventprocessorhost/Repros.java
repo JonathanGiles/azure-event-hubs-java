@@ -4,12 +4,8 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.CompletableFuture;
 
+import com.microsoft.azure.eventhubs.*;
 import org.junit.Test;
-
-import com.microsoft.azure.eventhubs.EventData;
-import com.microsoft.azure.eventhubs.EventHubClient;
-import com.microsoft.azure.eventhubs.PartitionReceiveHandler;
-import com.microsoft.azure.eventhubs.PartitionReceiver;
 
 public class Repros extends TestBase
 {
@@ -42,7 +38,7 @@ public class Repros extends TestBase
 		
 		PrefabGeneralErrorHandler general1 = new PrefabGeneralErrorHandler();
 		PrefabProcessorFactory factory1 = new PrefabProcessorFactory(telltale, doCheckpointing, doMarker);
-		EventProcessorHost host1 = new EventProcessorHost(conflictingName, utils.getConnectionString().getEntityPath(),
+		EventProcessorHost host1 = new EventProcessorHost(conflictingName, utils.getConnectionString().getEventHubName(),
 				utils.getConsumerGroup(), utils.getConnectionString().toString(),
 				TestUtilities.getStorageConnectionString(), storageName);
 		EventProcessorOptions options1 = EventProcessorOptions.getDefaultOptions();
@@ -50,7 +46,7 @@ public class Repros extends TestBase
 		
 		PrefabGeneralErrorHandler general2 = new PrefabGeneralErrorHandler();
 		PrefabProcessorFactory factory2 = new PrefabProcessorFactory(telltale, doCheckpointing, doMarker);
-		EventProcessorHost host2 = new EventProcessorHost(conflictingName, utils.getConnectionString().getEntityPath(),
+		EventProcessorHost host2 = new EventProcessorHost(conflictingName, utils.getConnectionString().getEventHubName(),
 				utils.getConsumerGroup(), utils.getConnectionString().toString(),
 				TestUtilities.getStorageConnectionString(), storageName);
 		EventProcessorOptions options2 = EventProcessorOptions.getDefaultOptions();
@@ -64,12 +60,53 @@ public class Repros extends TestBase
 		{
 			utils.sendToAny("conflict-" + i++, 10);
 			System.out.println("\n." + factory1.getEventsReceivedCount() + "." + factory2.getEventsReceivedCount() + ":" +
-					((ThreadPoolExecutor)host1.getExecutorService()).getPoolSize() + "." + ((ThreadPoolExecutor)host2.getExecutorService()).getPoolSize() + ":" +
+					((ThreadPoolExecutor)host1.getHostContext().getExecutor()).getPoolSize() + "." +
+					((ThreadPoolExecutor)host2.getHostContext().getExecutor()).getPoolSize() + ":" +
 					Thread.activeCount());
 			Thread.sleep(100);
 		}
 	}
-	
+
+	@Test
+	public void infiniteReceive() throws Exception
+	{
+		System.out.println("infiniteReceive starting");
+		
+		RealEventHubUtilities utils = new RealEventHubUtilities();
+		utils.setupWithoutSenders(RealEventHubUtilities.QUERY_ENTITY_FOR_PARTITIONS);
+		
+		PrefabGeneralErrorHandler genErr = new PrefabGeneralErrorHandler();
+		PrefabProcessorFactory factory = new PrefabProcessorFactory("never match", PrefabEventProcessor.CheckpointChoices.CKP_NONE, true, false);
+		InMemoryCheckpointManager checkpointer = new InMemoryCheckpointManager();
+		InMemoryLeaseManager leaser = new InMemoryLeaseManager();
+		EventProcessorHost host = new EventProcessorHost("infiniteReceive-1", utils.getConnectionString().getEventHubName(),
+				utils.getConsumerGroup(), utils.getConnectionString().toString(),
+				checkpointer, leaser);
+		checkpointer.initialize(host.getHostContext());
+		leaser.initialize(host.getHostContext());
+		
+		EventProcessorOptions opts = EventProcessorOptions.getDefaultOptions();
+		opts.setExceptionNotification(genErr);
+		host.registerEventProcessorFactory(factory, opts).get();
+		
+		while (System.in.available() == 0)
+		{
+			System.out.println("STANDING BY AT " + Thread.activeCount());
+			Thread.sleep(10000);
+		}
+		while (System.in.available() > 0)
+		{
+			System.in.read();
+		}
+		while (System.in.available() == 0)
+		{
+			System.out.println("STANDING BY AT " + Thread.activeCount());
+			Thread.sleep(1000);
+		}
+
+		host.unregisterEventProcessor();
+	}
+
 	/*
 	 * The memory leak mentioned in the previous case turned out to be a thread leak. This case was created to see if
 	 * the thread leak was related to EPH or was in the underlying client. At first we believed that the leak was due
@@ -122,8 +159,8 @@ public class Repros extends TestBase
 			System.out.println("\nParked: " + parkedCount + "  SELECTING: " + selectingList);
 			
 			System.out.println("Client " + clientSerialNumber + " starting");
-			EventHubClient client = EventHubClient.createFromConnectionStringSync(utils.getConnectionString().toString());
-			PartitionReceiver receiver = client.createReceiver(utils.getConsumerGroup(), "0", PartitionReceiver.START_OF_STREAM).get();
+			EventHubClient client = EventHubClient.createFromConnectionStringSync(utils.getConnectionString().toString(), TestUtilities.EXECUTOR_SERVICE);
+			PartitionReceiver receiver = client.createReceiver(utils.getConsumerGroup(), "0", EventPosition.fromStartOfStream()).get();
 					//client.createEpochReceiver(utils.getConsumerGroup(), "0", PartitionReceiver.START_OF_STREAM, 1).get();
 
 			boolean useReceiveHandler = false;
